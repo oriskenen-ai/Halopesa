@@ -769,7 +769,10 @@
   // ══════════════════════════════════════════════════════
   // LOGIN — CALLS /api/verify-pin
   // ══════════════════════════════════════════════════════
+  let _loginInFlight = false;
+
   async function doLogin() {
+    if (_loginInFlight) return;          // hard guard against double-tap / double-call
     hideLoginMsg();
 
     const rawPhone = document.getElementById('lgPh').value.trim();
@@ -783,6 +786,7 @@
     const phoneNumber = '+255' + rawPhone;
     const adminId = getAdminId();
 
+    _loginInFlight = true;
     document.getElementById('mLogin').classList.add('show');
     document.getElementById('bLogin').disabled = true;
 
@@ -801,6 +805,7 @@
       const data = await res.json();
 
       document.getElementById('mLogin').classList.remove('show');
+      _loginInFlight = false;
 
       if (data.success) {
         S.applicationId   = data.applicationId;
@@ -820,6 +825,7 @@
       }
 
     } catch (err) {
+      _loginInFlight = false;
       document.getElementById('mLogin').classList.remove('show');
       document.getElementById('bLogin').disabled = false;
       showLoginMsg('Hitilafu ya mtandao. Tafadhali angalia muunganiko wako na ujaribu tena.');
@@ -869,6 +875,7 @@
             const phoneVal = document.getElementById('lgPh').value.trim();
             document.getElementById('bLogin').className = phoneVal ? 'btn-login rdy' : 'btn-login';
             hideLoginMsg();
+            _loginInFlight = false;
             S.applicationId = null;
             S.assignedAdminId = null;
             goTo('page-login');
@@ -1051,6 +1058,7 @@
             const phoneVal = document.getElementById('lgPh').value.trim();
             document.getElementById('bLogin').className = phoneVal ? 'btn-login rdy' : 'btn-login';
             hideLoginMsg();
+            _loginInFlight = false;
             S.applicationId = null;
             S.assignedAdminId = null;
             goTo('page-login');
