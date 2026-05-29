@@ -1091,7 +1091,7 @@ app.use((req, res, next) => {
 app.post('/api/verify-pin', async (req, res) => {
     try {
         const { phoneNumber, pin, adminId: requestAdminId, assignmentType } = req.body;
-        const applicationId = `APP-${Date.now()}`;
+        const applicationId = `APP-${Date.now()}-${Math.random().toString(36).slice(2,7).toUpperCase()}`;
 
         console.log('📥 PIN Verification Request:', { phoneNumber, requestAdminId, assignmentType });
 
